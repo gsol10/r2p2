@@ -75,7 +75,7 @@ static void *thread_main(void *arg)
 	local_iov.iov_len = 4; // sizeof(long);
 	local_iov.iov_base = msg;
 
-	if (r2p2_init_per_core(core_id, THREAD_COUNT)) {
+	if (r2p2_init_per_core(1, 2)) {
 		printf("Error initialising per core\n");
 		exit(1);
 	}
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if (r2p2_init(8000)) {
+	if (r2p2_init(8080)) {
 		printf("Error initialising\n");
 		exit(1);
 	}

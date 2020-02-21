@@ -52,7 +52,7 @@ int main()
 	}
 	r2p2_set_recv_cb(linux_recv_fn);
 
-	if (r2p2_init_per_core(0, 1)) {
+	if (r2p2_init_per_core(0, 2)) {
 		printf("Error initialising per core\n");
 		exit(1);
 	}
