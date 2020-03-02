@@ -26,7 +26,7 @@ R2P2LIB_DIR=$(ROOTDIR)/r2p2
 include $(R2P2LIB_DIR)/dir.mk
 
 CFLAGS= -Wall -g -MD -O3 -I./../r2p2/inc -DLINUX -I$(PICOTLSLIB_DIR)/include
-LDFLAGS= -lm -lpthread -lconfig -lpicotls-core -lpicotls-openssl -L$(PICOTLSLIB_DIR)
+LDFLAGS= -lm -lpthread -lconfig -lpicotls-core -lpicotls-openssl -lcrypto -L$(PICOTLSLIB_DIR)
 
 ifeq ($(WITH_TIMESTAMPING), 1)
 	EXTRA_CLIENT_FLAGS = -DWITH_TIMESTAMPING

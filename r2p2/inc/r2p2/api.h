@@ -27,6 +27,8 @@
 #include <stdint.h>
 #include <sys/uio.h>
 
+#include <picotls.h>
+
 typedef void (*success_cb_f)(long handle, void *arg, struct iovec *iov,
 							 int iovcnt);
 typedef void (*error_cb_f)(void *arg, int err);

@@ -44,6 +44,7 @@ enum {
 	CONTROL_MSG,
 	ACK_MSG,
 	DROP_MSG,
+	TLS_HANDSHAKE_MSG,
 };
 
 typedef void *generic_buffer;
@@ -70,7 +71,9 @@ struct r2p2_client_pair {
 	uint16_t reply_expected_packets;
 	uint16_t reply_received_packets;
 	struct r2p2_ctx *ctx;
+	ptls_t *tls;
 	enum {
+		R2P2_W_TLS_HANDSHAKE,
 		R2P2_W_ACK,
 		R2P2_W_RESPONSE,
 	} state;
@@ -84,6 +87,7 @@ struct r2p2_server_pair {
 	struct r2p2_msg reply;
 	uint16_t request_expected_packets;
 	uint16_t request_received_packets;
+	ptls_t *tls;
 	// Add here fields for garbage collection, e.g. last received
 };
 
@@ -91,7 +95,8 @@ static inline int is_response(struct r2p2_header *h)
 {
 	return ((h->type_policy & 0xF0) == (RESPONSE_MSG << 4)) ||
 		((h->type_policy & 0xF0) == (ACK_MSG << 4)) ||
-		((h->type_policy & 0xF0) == (DROP_MSG << 4));
+		((h->type_policy & 0xF0) == (DROP_MSG << 4)) ||
+		((h->type_policy & 0xF0) == (TLS_HANDSHAKE_MSG << 4));
 }
 
 static inline int is_first(struct r2p2_header *h)
@@ -143,7 +148,7 @@ void handle_incoming_pck(generic_buffer gb, int len,
 void timer_triggered(struct r2p2_client_pair *cp);
 /* Exposed only for lancet */
 void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id);
+					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls);
 
 /*
  * Implementation specific

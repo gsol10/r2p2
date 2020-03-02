@@ -37,17 +37,98 @@ static_assert(LINUX, "Timestamping supported only in Linux");
 #include <r2p2/timestamping.h>
 #endif
 
+#include <picotls.h>
+#include <picotls/openssl.h>
+#include <openssl/pem.h>
+
 #define POOL_SIZE 1024
 #define min(a, b) ((a) < (b)) ? (a) : (b)
 
 static recv_fn rfn;
 static app_flow_control afc_fn = NULL;
 
+ptls_context_t tls_ctx;
+
 static __thread struct fixed_mempool *client_pairs;
 static __thread struct fixed_mempool *server_pairs;
 static __thread struct fixed_linked_list pending_client_pairs = {0};
 static __thread struct fixed_linked_list pending_server_pairs = {0};
 static __thread struct iovec to_app_iovec[0xFF]; // change this to 0xFF;
+static __thread struct iovec tls_ticket = {0};
+
+static int on_save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t src)
+{
+	printf("Saving ticket\n");
+    tls_ticket.iov_base = malloc(src.len);
+    memcpy(tls_ticket.iov_base, src.base, src.len);
+    tls_ticket.iov_len = src.len;
+    return 0;
+}
+
+static int ticket_encrypt(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
+{
+	printf("Encrypt/Decrypt: %d callback called, src len is %lu\n", is_encrypt, src.len);
+    int ret;
+
+    if ((ret = ptls_buffer_reserve(dst, src.len)) != 0)
+        return ret;
+    memcpy(dst->base + dst->off, src.base, src.len);
+    dst->off += src.len;
+
+    return 0;
+}
+
+int r2p2_tls_init(int is_server) {
+	//common
+	memset(&tls_ctx, 0, sizeof(tls_ctx));
+	tls_ctx.get_time = &ptls_get_time;
+	tls_ctx.random_bytes = ptls_openssl_random_bytes;
+	tls_ctx.key_exchanges = ptls_openssl_key_exchanges;
+	assert(tls_ctx.key_exchanges[0] != NULL);
+	tls_ctx.cipher_suites = ptls_openssl_cipher_suites;
+
+	if (is_server) {
+		//server
+		static ptls_iovec_t certs[16];
+		size_t count = 0;
+		FILE *fcert = fopen("certificate.pem", "rb");
+		assert(fcert != NULL);
+		X509 *cert;
+		while ((cert = PEM_read_X509(fcert, NULL, NULL, NULL)) != NULL) {
+			ptls_iovec_t *dst = certs + count++;
+			dst->len = i2d_X509(cert, &dst->base);
+		}
+		fclose(fcert);
+		tls_ctx.certificates.list = certs;
+		tls_ctx.certificates.count = count;
+		static ptls_openssl_sign_certificate_t signer;
+		FILE *fkey = fopen("key.pem", "rb");
+		assert(fkey != NULL);
+		EVP_PKEY *pkey = PEM_read_PrivateKey(fkey, NULL, NULL, NULL);
+		assert(pkey != NULL);
+		ptls_openssl_init_sign_certificate(&signer, pkey);
+		EVP_PKEY_free(pkey);
+		tls_ctx.sign_certificate = &signer.super;
+		fclose(fkey);
+		//0-RTT
+		ptls_encrypt_ticket_t et = {ticket_encrypt};
+		tls_ctx.encrypt_ticket = &et;
+		tls_ctx.ticket_lifetime = 3600; //Values to be seen later
+		tls_ctx.max_early_data_size = 4096;
+		tls_ctx.require_dhe_on_psk = 0;
+	} else {
+		//client
+		ptls_openssl_verify_certificate_t verifier;
+		ptls_openssl_init_verify_certificate(&verifier, NULL);
+		tls_ctx.verify_certificate = &verifier.super;
+		/* //Might need this for self-signed certificates
+		X509_STORE *xstore;
+		xstore = X509_STORE_new();
+		X509_STORE_load_locations(xstore, certificate_path, NULL); 
+		ptls_openssl_init_verify_certificate(&verifier, xstore);*/
+	}
+	return 0;
+}
 
 static struct r2p2_client_pair *alloc_client_pair(void)
 {
@@ -232,8 +313,17 @@ static void r2p2_msg_add_payload(struct r2p2_msg *msg, generic_buffer gb)
 	}
 }
 
+int encrypt_block(char *dst, char *src, unsigned int len, ptls_t *tls){
+	ptls_buffer_t sendbuf;
+	ptls_buffer_init(&sendbuf, dst, 4000); //TODO: see what's the real len of dst
+	int ret;
+	if (ret = ptls_send(tls, &sendbuf, src, len) != 0)
+        return ret;
+	return ret;
+}
+
 void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id)
+					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls)
 {
 	unsigned int iov_idx, bufferleft, copied, tocopy, buffer_cnt, total_payload,
 		single_packet_msg, is_first, should_small_first;
@@ -295,7 +385,11 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 		}
 		src = iov[iov_idx].iov_base;
 		tocopy = min(bufferleft, iov[iov_idx].iov_len - copied);
-		memcpy(target, &src[copied], tocopy);
+		if (req_type == REQUEST_MSG || req_type == RESPONSE_MSG) {
+			int r = encrypt_block(target, &src[copied], tocopy, tls);
+		} else {
+			memcpy(target, &src[copied], tocopy); //TODO: what's happening here ? Partial requests ? Here we should use ptls_send
+		}
 		copied += tocopy;
 		bufferleft -= tocopy;
 		target += tocopy;
@@ -336,7 +430,7 @@ static void send_drop_msg(struct r2p2_server_pair *sp)
 	ack.iov_base = drop_payload;
 	ack.iov_len = 4;
 	r2p2_prepare_msg(&drop_msg, &ack, 1, DROP_MSG, FIXED_ROUTE,
-			sp->request.req_id);
+			sp->request.req_id, sp->tls);
 	buf_list_send(drop_msg.head_buffer, &sp->request.sender, NULL);
 #ifdef LINUX
 	free_buffer(drop_msg.head_buffer);
@@ -377,7 +471,7 @@ static void handle_response(generic_buffer gb, int len,
 
 	switch(get_msg_type(r2p2h)) {
 		case RESPONSE_MSG:
-			assert(cp->state == R2P2_W_RESPONSE);
+			assert(cp->state == R2P2_W_RESPONSE || cp->state == R2P2_W_TLS_HANDSHAKE);
 			set_buffer_payload_size(gb, len);
 			r2p2_msg_add_payload(&cp->reply, gb);
 
@@ -474,6 +568,7 @@ static void handle_request(generic_buffer gb, int len,
 		sp->request.req_id = req_id;
 		sp->request_expected_packets = r2p2h->p_order;
 		sp->request_received_packets = 1;
+		sp->tls = ptls_new(&tls_ctx, 1); //TODO: Add the handshake msg - check for 0RTT and try to decrypt
 
 		if (!should_keep_req(sp)) {
 			set_buffer_payload_size(gb, len);
@@ -490,7 +585,7 @@ static void handle_request(generic_buffer gb, int len,
 			// send ACK
 			ack.iov_base = ack_payload;
 			ack.iov_len = 3;
-			r2p2_prepare_msg(&ack_msg, &ack, 1, ACK_MSG, FIXED_ROUTE, req_id);
+			r2p2_prepare_msg(&ack_msg, &ack, 1, ACK_MSG, FIXED_ROUTE, req_id, sp->tls);
 			buf_list_send(ack_msg.head_buffer, source, NULL);
 #ifdef LINUX
 			free_buffer(ack_msg.head_buffer);
@@ -590,7 +685,7 @@ void r2p2_send_response(long handle, struct iovec *iov, int iovcnt)
 
 	sp = (struct r2p2_server_pair *)handle;
 	r2p2_prepare_msg(&sp->reply, iov, iovcnt, RESPONSE_MSG, FIXED_ROUTE,
-					 sp->request.req_id);
+					 sp->request.req_id, sp->tls);
 	buf_list_send(sp->reply.head_buffer, &sp->request.sender, NULL);
 
 	// Notify router
@@ -609,6 +704,7 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx)
 	cp = alloc_client_pair();
 	assert(cp);
 	cp->ctx = ctx;
+	cp->tls = ptls_new(&tls_ctx, 0);
 
 	if (prepare_to_send(cp)) {
 		free_client_pair(cp);
@@ -617,7 +713,7 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx)
 
 	rid = rand();
 	r2p2_prepare_msg(&cp->request, iov, iovcnt, REQUEST_MSG,
-					 ctx->routing_policy, rid);
+					 ctx->routing_policy, rid, cp->tls);
 	cp->state = cp->request.head_buffer == cp->request.tail_buffer
 					? R2P2_W_RESPONSE
 					: R2P2_W_ACK;
