@@ -88,6 +88,7 @@ struct r2p2_server_pair {
 	uint16_t request_expected_packets;
 	uint16_t request_received_packets;
 	ptls_t *tls;
+	ptls_buffer_t *handshake;
 	// Add here fields for garbage collection, e.g. last received
 };
 
@@ -148,7 +149,7 @@ void handle_incoming_pck(generic_buffer gb, int len,
 void timer_triggered(struct r2p2_client_pair *cp);
 /* Exposed only for lancet */
 void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls);
+					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake);
 
 /*
  * Implementation specific
