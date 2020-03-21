@@ -44,7 +44,8 @@ enum {
 	CONTROL_MSG,
 	ACK_MSG,
 	DROP_MSG,
-	TLS_HANDSHAKE_MSG,
+	TLS_CLIENT_HELLO_MSG,
+	TLS_SERVER_HELLO_MSG,
 };
 
 typedef void *generic_buffer;
@@ -97,7 +98,12 @@ static inline int is_response(struct r2p2_header *h)
 	return ((h->type_policy & 0xF0) == (RESPONSE_MSG << 4)) ||
 		((h->type_policy & 0xF0) == (ACK_MSG << 4)) ||
 		((h->type_policy & 0xF0) == (DROP_MSG << 4)) ||
-		((h->type_policy & 0xF0) == (TLS_HANDSHAKE_MSG << 4));
+		((h->type_policy & 0xF0) == (TLS_SERVER_HELLO_MSG << 4));
+}
+
+static inline int is_handshake(struct r2p2_header *h) {
+	return (h->type_policy & 0xF0) == (TLS_CLIENT_HELLO_MSG << 4)||
+		((h->type_policy & 0xF0) == (TLS_SERVER_HELLO_MSG << 4));
 }
 
 static inline int is_first(struct r2p2_header *h)

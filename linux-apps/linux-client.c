@@ -26,11 +26,12 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <r2p2/api.h>
 
 #define THREAD_COUNT 1
-#define RPC_TO_SEND 10
+#define RPC_TO_SEND 1
 
 struct r2p2_host_tuple destination;
 static int __thread should_send;
@@ -85,13 +86,20 @@ static void *thread_main(void *arg)
 		// send message
 		if (should_send) {
 			printf("Sending msg: %s\n", (char *)local_iov.iov_base);
-			r2p2_send_req(&local_iov, 1, &ctx);
+			struct iovec server_name = {"TEST", 4};
+			r2p2_send_req(&local_iov, 1, &ctx, server_name);
 			should_send = 0;
 			count++;
 		}
 
 		// poll for response
 		r2p2_poll();
+	}
+	int c = 0;
+	while(c < 10) {
+		sleep(1);
+		r2p2_poll();
+		c++;
 	}
 	return NULL;
 }
@@ -116,7 +124,8 @@ int main(int argc, char **argv)
 	inet_pton(AF_INET, argv[1], &(sa.sin_addr));
 	destination.port = atoi(argv[2]);
 	destination.ip = sa.sin_addr.s_addr;
-
+	
+	r2p2_tls_init(0);
 	for (i = 1; i < THREAD_COUNT; i++) {
 		if (pthread_create(&tid, NULL, thread_main, (void *)(long)i)) {
 			fprintf(stderr, "failed to spawn thread %d\n", i);

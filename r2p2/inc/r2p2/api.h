@@ -76,8 +76,9 @@ void r2p2_poll(void);
 /*
  * Implementation agnostic
  */
+int r2p2_tls_init(int is_server);
 void r2p2_set_recv_cb(recv_fn fn);
 void r2p2_set_app_flow_control_fn(app_flow_control fn);
-void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx);
+void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *, struct iovec server_name);
 void r2p2_send_response(long handle, struct iovec *iov, int iovcnt);
 void r2p2_recv_resp_done(long handle);

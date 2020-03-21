@@ -46,6 +46,7 @@ static void linux_recv_fn(long handle, struct iovec *iov, int iovcnt)
 
 int main()
 {
+	r2p2_tls_init(1);
 	if (r2p2_init(8000)) {
 		printf("Error initialising\n");
 		exit(1);
