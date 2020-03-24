@@ -73,6 +73,9 @@ struct r2p2_client_pair {
 	uint16_t reply_received_packets;
 	struct r2p2_ctx *ctx;
 	ptls_t *tls;
+	struct iovec *iov;
+	uint16_t iovcnt;
+	int rid;
 	enum {
 		R2P2_W_TLS_HANDSHAKE,
 		R2P2_W_ACK,
@@ -155,7 +158,7 @@ void handle_incoming_pck(generic_buffer gb, int len,
 void timer_triggered(struct r2p2_client_pair *cp);
 /* Exposed only for lancet */
 void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake);
+					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int new_request);
 
 /*
  * Implementation specific
