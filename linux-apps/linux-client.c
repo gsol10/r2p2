@@ -96,7 +96,27 @@ static void *thread_main(void *arg)
 		r2p2_poll();
 	}
 	int c = 0;
-	while(c < 10) {
+	count = 0;
+	while(c < 4) {
+		sleep(1);
+		r2p2_poll();
+		c++;
+	}
+	while (count < RPC_TO_SEND) {
+		// send message
+		if (should_send) {
+			printf("Sending msg: %s\n", (char *)local_iov.iov_base);
+			struct iovec server_name = {"TEST", 4};
+			r2p2_send_req(&local_iov, 1, &ctx, server_name);
+			should_send = 0;
+			count++;
+		}
+
+		// poll for response
+		r2p2_poll();
+	}
+	c = 0;
+	while(c < 3) {
 		sleep(1);
 		r2p2_poll();
 		c++;
