@@ -171,6 +171,65 @@ static inline generic_buffer r2p2_get_ack(uint16_t req_id, ptls_buffer_t *handsh
 	return msg;
 }
 
+/*
+bufferleft at entry: bufferleft, update when leaving
+*/
+static inline int start_handshake(void *target, ptls_t *tls, size_t *accepted_data_by_server, size_t *bufferleft) {
+	ptls_buffer_t tbuf;
+	ptls_buffer_init(&tbuf, target, *bufferleft);
+	int ret = 0;
+	if (tls_ticket.base != NULL) {
+		printf("We're using the ticket here\n");
+		assert(tls_ticket.len != 0);
+		ptls_handshake_properties_t hprops = {0};
+		hprops.client.session_ticket = tls_ticket;
+		hprops.client.max_early_data_size = accepted_data_by_server;
+		ret = ptls_handshake(tls, &tbuf, NULL, NULL, &hprops);
+	} else {
+		printf("Simple handshake\n");
+		ret = ptls_handshake(tls, &tbuf, NULL, NULL, NULL);
+	}
+	assert(tbuf.off <= *bufferleft && "Handshake is too long !");
+	*bufferleft -= tbuf.off;
+	return ret;
+}
+
+/*
+This function fills the packet with as many iovec as it can.
+It updates iovcnt with number of iovec fully written, iov_pt and bufferleft.
+iov_pt is used to indicate the offset in the current iov, and is set to the offset where the copy was stopped
+*/
+static int fill_packet(struct iovec *iov, int *iovcnt, unsigned int *iov_pt, void *target, size_t *bufferleft, ptls_t *tls) {
+	int ret = 0;
+	unsigned int iov_idx = 0;
+	unsigned int starting_offset = *iov_pt;
+	while (*bufferleft && iov_idx < *iovcnt) {
+		size_t len = iov[iov_idx].iov_len - starting_offset;
+		unsigned int tocopy = min(*bufferleft - ptls_get_record_overhead(tls), len);
+		char *src = iov[iov_idx].iov_base;
+		ptls_buffer_t sbuf;
+		ptls_buffer_init(&sbuf, target, *bufferleft);
+		printf("Encrypting here\n");
+		ret = ptls_send(tls, &sbuf, src + starting_offset, tocopy); //This might be subtimal. It could be useful to group the iovec before encrypting (to avoid multiplying the record overhead)
+		
+		if (ret != 0) {
+			printf("Error encrypting\n");
+			return ret;
+		}
+		if (tocopy == len) {
+			//This iovec was fully copied
+			iov_idx += 1;
+			iov++; //Go to next iovec
+		} else {
+			*iov_pt = tocopy;
+		}
+		*bufferleft -= sbuf.off;
+		starting_offset = 0;
+	}
+	*iovcnt = iov_idx;
+	return ret;
+}
+
 static struct r2p2_client_pair *alloc_client_pair(void)
 {
 	struct r2p2_client_pair *cp;
@@ -576,6 +635,40 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 	msg->req_id = req_id;
 }
 
+static void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
+					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake) {
+	int c = 0; //TODO: fixed with two arg indicating iov start and pos
+	unsigned int start_offset = 0;
+	uint16_t cnt = 1;
+	int type_policy = (req_type << 4) | (0x0F & policy);
+	while (c < iovcnt) {
+		generic_buffer gb = get_buffer();
+		r2p2_msg_add_payload(msg, gb);
+		void *header = get_buffer_payload(gb);
+		char *target = header + sizeof(struct r2p2_header);
+		size_t bufferleft = PAYLOAD_SIZE;
+		if (c == 0) {
+			memcpy(target, handshake->base, handshake->off);
+			target += handshake->off;
+			bufferleft -= handshake->off;
+		}
+		int written = iovcnt - c;
+		fill_packet(iov + c, &written, &start_offset, target, &bufferleft, tls);
+		printf("%d packet written\n", written);
+		c += written;
+
+		set_buffer_payload_size(gb, PAYLOAD_SIZE + sizeof(struct r2p2_header) - bufferleft);
+		r2p2_set_header(header, req_id, type_policy, 0, cnt);
+		cnt++;
+	}
+
+	//Fix first and last header
+	struct r2p2_header *r2p2h = (struct r2p2_header *)get_buffer_payload(msg->head_buffer);
+	r2p2h->p_order = cnt;
+	r2p2h = (struct r2p2_header *)get_buffer_payload(msg->tail_buffer);
+	r2p2h->flags |= L_FLAG;
+}
+
 static int should_keep_req(__attribute__((unused))struct r2p2_server_pair *sp)
 {
 	if (afc_fn)
@@ -930,95 +1023,6 @@ void r2p2_send_response(long handle, struct iovec *iov, int iovcnt)
 
 	remove_from_pending_server_pairs(sp);
 	free_server_pair(sp);
-}
-
-
-/*
-bufferleft at entry: bufferleft, update when leaving
-*/
-static inline int start_handshake(void *target, ptls_t *tls, size_t *accepted_data_by_server, size_t *bufferleft) {
-	ptls_buffer_t tbuf;
-	ptls_buffer_init(&tbuf, target, *bufferleft);
-	int ret = 0;
-	if (tls_ticket.base != NULL) {
-		printf("We're using the ticket here\n");
-		assert(tls_ticket.len != 0);
-		ptls_handshake_properties_t hprops = {0};
-		hprops.client.session_ticket = tls_ticket;
-		hprops.client.max_early_data_size = accepted_data_by_server;
-		ret = ptls_handshake(tls, &tbuf, NULL, NULL, &hprops);
-	} else {
-		printf("Simple handshake\n");
-		ret = ptls_handshake(tls, &tbuf, NULL, NULL, NULL);
-	}
-	assert(tbuf.off <= *bufferleft && "Handshake is too long !");
-	*bufferleft -= tbuf.off;
-	return ret;
-}
-
-/*
-This function fills the packet with as many iovec as it can.
-It updates iovcnt with number of iovec fully written, iov_pt and bufferleft.
-iov_pt is used to indicate the offset in the current iov, and is set to the offset where the copy was stopped
-*/
-static int fill_packet(struct iovec *iov, int *iovcnt, unsigned int *iov_pt, void *target, size_t *bufferleft, ptls_t *tls) {
-	int ret = 0;
-	unsigned int iov_idx = 0;
-	unsigned int starting_offset = *iov_pt;
-	while (*bufferleft && *iovcnt > 0) {
-		size_t len = iov[iov_idx].iov_len - starting_offset;
-		unsigned int tocopy = min(*bufferleft - ptls_get_record_overhead(tls), len);
-		char *src = iov[iov_idx].iov_base;
-		ptls_buffer_t sbuf;
-		ptls_buffer_init(&sbuf, target, *bufferleft);
-		printf("Encrypting here\n");
-		ret = ptls_send(tls, &sbuf, src + starting_offset, tocopy); //This might be subtimal. It could be useful to group the iovec before encrypting (to avoid multiplying the record overhead)
-		if (ret != 0) {
-			printf("Error encrypting\n");
-			return ret;
-		}
-		if (tocopy == len) {
-			//This iovec was fully copied
-			iov_idx += 1;
-			iov++; //Go to next iovec //TODO: this obv does not update iov
-		} else {
-			*iov_pt = tocopy;
-		}
-		*bufferleft -= tocopy;
-		starting_offset = 0;
-	}
-	*iovcnt = iov_idx;
-	return ret;
-}
-
-static void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake) {
-	int c = 0; //TODO: fixed with two arg indicating iov start and pos
-	unsigned int start_offset = 0;
-	uint16_t cnt = 0;
-	int type_policy = (req_type << 4) | (0x0F & policy);
-	while (c < iovcnt) {
-		generic_buffer gb = get_buffer();
-		r2p2_msg_add_payload(msg, gb);
-		void *header = get_buffer_payload(gb);
-		char *target = header + sizeof(struct r2p2_header);
-		size_t bufferleft = PAYLOAD_SIZE - sizeof(struct r2p2_header);
-		//TODO: first copy handshake
-		int written = iovcnt - c;
-		fill_packet(iov + c, &written, &start_offset, target, &bufferleft, tls);
-		c += written;
-
-		set_buffer_payload_size(gb, PAYLOAD_SIZE + sizeof(struct r2p2_header) - bufferleft);
-		r2p2_set_header(header, req_id, type_policy, 0, cnt);
-		cnt++;
-	}
-
-	//Fix first and last header
-	struct r2p2_header *r2p2h = (struct r2p2_header *)get_buffer_payload(msg->head_buffer);
-	r2p2h->flags |= F_FLAG;
-	r2p2h->p_order = cnt;
-	r2p2h = (struct r2p2_header *)get_buffer_payload(msg->tail_buffer);
-	r2p2h->flags |= L_FLAG;
 }
 
 static generic_buffer r2p2_get_first(struct iovec *iov, int *iovcnt, uint8_t policy, uint16_t req_id, ptls_t *tls) {
