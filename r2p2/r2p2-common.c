@@ -733,18 +733,11 @@ static void handle_response(generic_buffer gb, int len,
 			printf("Handshake, pointer = %p\n", tls_ctx.save_ticket);
 			perform_handshake(cp->tls, &handshake, get_buffer_payload(gb), len);
 			printf("Received server hello\n");
-#ifdef LINUX
-			// Free the request already sent
-			generic_buffer sb = cp->request.head_buffer;
-			while (sb != NULL) {
-				free_buffer(sb);
-				sb = get_buffer_next(sb);
-			}
-#endif
+
 			cp->request.head_buffer = NULL;
 			cp->request.tail_buffer = NULL;
-			r2p2_prepare_msg(&cp->request, cp->iov, cp->iovcnt, REQUEST_MSG,
-					 cp->ctx->routing_policy,  cp->rid, cp->tls, &handshake, 0); //Save and replace the policy
+			r2p2_prepare_msg2(&cp->request, cp->iov, cp->iovcnt, REQUEST_MSG,
+					 cp->ctx->routing_policy,  cp->rid, cp->tls, &handshake);
 			//TODO: if we copied iov, free it.
 			rest_to_send = cp->request.head_buffer;
 			buf_list_send(rest_to_send, &cp->reply.sender, cp->impl_data);
@@ -760,15 +753,6 @@ static void handle_response(generic_buffer gb, int len,
 			rbuf = perform_handshake(cp->tls, &handshake, get_buffer_payload(gb), len);
 			assert(rbuf->off != 0);
 			memcpy(target, rbuf->base, rbuf->off);
-			// size_t input_size = len - sizeof(struct r2p2_header);
-			// size_t off = 0;
-			// int ret = 0;
-			// do {
-			// 	size_t consumed = input_size - off;
-			// 	ret = ptls_receive(cp->tls, &rbuf, src + off, &consumed);
-			// 	off += consumed;
-			// 	printf("ptls_receive ret %d, off %ld, input_size = %ld\n", ret, off, input_size);
-			// } while (ret == 0 && off < input_size);
 			printf("Received %ld bytes : %s\n", rbuf->off, rbuf->base);
 			set_buffer_payload_size(unencrypted, (uint32_t)rbuf->off);
 			free_buffer(gb);
