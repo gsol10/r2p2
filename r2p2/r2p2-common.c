@@ -395,6 +395,7 @@ static ptls_buffer_t *receive_tls(ptls_t *tls, ptls_buffer_t *handshake, char *i
 		roff += consumed;
 		printf("2\\State = %d, in progress = %d, len = %d, roff = %d, rbuf len = %ld\n", ret, PTLS_ERROR_IN_PROGRESS, len, roff, rbuf->off);
 	}
+	return rbuf;
 }
 
 static void handshake_part(ptls_t *tls, ptls_buffer_t *handshake, char *incoming, int len) {
