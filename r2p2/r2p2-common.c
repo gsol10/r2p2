@@ -833,9 +833,6 @@ static void handle_request(generic_buffer gb, int len,
 {
 	struct r2p2_server_pair *sp;
 	uint16_t req_id;
-	char ack_payload[] = "ACK";
-	struct iovec ack;
-	struct r2p2_msg ack_msg = {0};
 
 	req_id = r2p2h->rid;
 	ptls_buffer_t *rbuf = NULL;
@@ -871,7 +868,7 @@ static void handle_request(generic_buffer gb, int len,
 			// add to pending request
 			add_to_pending_server_pairs(sp);
 
-			generic_buffer ack_buff = r2p2_get_ack(req_id, sp->handshake);
+			generic_buffer ack_buff = r2p2_get_ack(req_id, sp->handshake, 1);
 
 			//ptls_buffer_dispose(sp->handshake);
 			buf_list_send(ack_buff, source, NULL);
@@ -885,7 +882,8 @@ static void handle_request(generic_buffer gb, int len,
 		assert(sp);
 		rbuf = perform_handshake(sp->tls, sp->handshake, get_buffer_payload(gb), len);
 		if (sp->request_expected_packets == 0) {
-			sp->request_expected_packets = r2p2h->p_order + 1;
+			sp->request_expected_packets = r2p2h->p_order;
+			sp->request_received_packets++;
 		} else if (r2p2h->p_order != sp->request_received_packets++) {
 			printf("OOF in request\n");
 			remove_from_pending_server_pairs(sp);
@@ -906,31 +904,18 @@ static void handle_request(generic_buffer gb, int len,
 		r2p2_msg_add_payload(&sp->request, unencrypted);
 		free(rbuf);
 	}
-	// ptls_buffer_t rbuf;
-	// ptls_buffer_init(&rbuf, target, len);
-	// size_t input_size = len - sizeof(struct r2p2_header);
-	// size_t off = 0;
-	// int ret = 0;
-	// do {
-    //     size_t consumed = input_size - off;
-    //     ret = ptls_receive(sp->tls, &rbuf, src + off, &consumed);
-    //     off += consumed;
-	// 	printf("ptls_receive ret %d, off %ld, input_size = %ld\n", ret, off, input_size);
-    // } while (ret == 0 && off < input_size);
-	
+
 	free_buffer(gb);
-	
-	
 
 	if (!is_last(r2p2h))
 		return;
 
-	// if (sp->request_received_packets != sp->request_expected_packets) {
-	// 	printf("Wrong total size in request\n");
-	// 	remove_from_pending_server_pairs(sp);
-	// 	free_server_pair(sp);
-	// 	return;
-	// }
+	if (sp->request_received_packets != sp->request_expected_packets) {
+		printf("Wrong total size in request\n");
+		remove_from_pending_server_pairs(sp);
+		free_server_pair(sp);
+		return;
+	}
 	assert(rfn);
 	forward_request(sp);
 }
