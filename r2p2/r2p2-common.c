@@ -152,19 +152,23 @@ static inline void r2p2_set_header(void *header, uint16_t req_id, uint8_t type_p
 	r2p2h->p_order = p_order;
 }
 
-static inline generic_buffer r2p2_get_ack(uint16_t req_id, ptls_buffer_t *handshake) {
+static inline generic_buffer r2p2_get_ack(uint16_t req_id, ptls_buffer_t *handshake, int is_handshake) {
 	generic_buffer msg = get_buffer();
 	void *header = get_buffer_payload(msg);
 	char *target = header + sizeof(struct r2p2_header);
+	uint8_t reqtype = ACK_MSG;
 	//assert(handshake->off <= PAYLOAD_SIZE); //THis is annoying, handshake makes the packet size over the MTU.
 	size_t handshake_len = 0;
 
+	if(is_handshake) {
+		reqtype = TLS_SERVER_HELLO_MSG;
+	}
 	if (handshake) {
 		handshake_len = handshake->off;
 		memcpy(target, handshake->base, handshake->off);
 	}
 
-	r2p2_set_header(header, req_id, (ACK_MSG << 4) | (0x0F & FIXED_ROUTE), F_FLAG | L_FLAG, 1);
+	r2p2_set_header(header, req_id, (reqtype << 4) | (0x0F & FIXED_ROUTE), F_FLAG | L_FLAG, 1);
 
 	set_buffer_payload_size(msg, sizeof(struct r2p2_header) + handshake_len);
 
