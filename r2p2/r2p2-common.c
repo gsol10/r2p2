@@ -601,16 +601,11 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 		}
 		src = iov[iov_idx].iov_base;
 		tocopy = min(bufferleft - ptls_get_record_overhead(tls), iov[iov_idx].iov_len - copied);
-		//if (req_type == REQUEST_MSG || req_type == RESPONSE_MSG) {
 		ptls_buffer_t sbuf;
 		ptls_buffer_init(&sbuf, target, bufferleft);
-		//int r = encrypt_block(target, &src[copied], tocopy, tls);
 		printf("Encrypting here\n");
 		printf("Send ret = %d\n", ptls_send(tls, &sbuf, src + copied, tocopy));
 		printf("tocopy = %d, written = %d\n", tocopy, sbuf.off);
-		//} else { //TODO: see for ACKS and stuff
-		//	memcpy(target, &src[copied], tocopy);
-		//}
 		copied += tocopy;
 		bufferleft -= sbuf.off;
 		target += sbuf.off;
@@ -895,7 +890,6 @@ static void handle_request(generic_buffer gb, int len,
 	set_buffer_payload_size(gb, len);
 	generic_buffer unencrypted = get_buffer();
 	assert(unencrypted);
-	//char *src = get_buffer_payload(gb) + sizeof(struct r2p2_header);
 	char *target = get_buffer_payload(unencrypted);
 	if (rbuf != NULL && rbuf->off != 0) {
 		memcpy(target, rbuf->base, rbuf->off);
@@ -1052,22 +1046,18 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct i
 	cp->iovcnt = iovcnt;
 	cp->rid = rid;
 
-	//REFACTOR: send first message.
 	cp->request.req_id = rid;
 	generic_buffer first = r2p2_get_first(iov, &iovcnt, ctx->routing_policy, rid, cp->tls);
 
 	//TODO: save cursor of early sent data
 
-	// r2p2_prepare_msg(&cp->request, iov, iovcnt, REQUEST_MSG,
-	// 				 ctx->routing_policy, rid, cp->tls, NULL, 1); //Here we need to store the iov in case handshake is not done directly
+	//Here we need to store the iov in case handshake is not done directly
 	if (iovcnt == cp->iovcnt) {
 		cp->state = R2P2_W_RESPONSE;
 	} else {
 		cp->state = R2P2_W_TLS_HANDSHAKE;
 	}
-	// cp->state = cp->request.head_buffer == cp->request.tail_buffer
-	// 				? R2P2_W_RESPONSE
-	// 				: R2P2_W_ACK;
+
 	printf("Test2, rid = %u\n", cp->request.req_id);
 
 	add_to_pending_client_pairs(cp);
