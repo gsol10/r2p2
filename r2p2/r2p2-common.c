@@ -142,6 +142,16 @@ int r2p2_tls_init(int is_server) {
 	return 0;
 }
 
+static inline void r2p2_set_header(void *header, uint16_t req_id, uint8_t type_policy, uint8_t flags, uint16_t p_order) {
+	struct r2p2_header *r2p2h = (struct  r2p2_header *) header;
+	r2p2h->magic = MAGIC;
+	r2p2h->rid = req_id;
+	r2p2h->header_size = sizeof(struct r2p2_header);
+	r2p2h->type_policy = type_policy;
+	r2p2h->flags = flags;
+	r2p2h->p_order = p_order;
+}
+
 static struct r2p2_client_pair *alloc_client_pair(void)
 {
 	struct r2p2_client_pair *cp;
@@ -934,15 +944,6 @@ void r2p2_send_response(long handle, struct iovec *iov, int iovcnt)
 	free_server_pair(sp);
 }
 
-static inline void r2p2_set_header(void *header, uint16_t req_id, uint8_t type_policy, uint8_t flags, uint16_t p_order) {
-	struct r2p2_header *r2p2h = (struct  r2p2_header *) header;
-	r2p2h->magic = MAGIC;
-	r2p2h->rid = req_id;
-	r2p2h->header_size = sizeof(struct r2p2_header);
-	r2p2h->type_policy = type_policy;
-	r2p2h->flags = flags;
-	r2p2h->p_order = p_order;
-}
 
 /*
 bufferleft at entry: bufferleft, update when leaving
