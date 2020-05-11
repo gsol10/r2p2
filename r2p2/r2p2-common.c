@@ -1091,10 +1091,10 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct i
 
 	// r2p2_prepare_msg(&cp->request, iov, iovcnt, REQUEST_MSG,
 	// 				 ctx->routing_policy, rid, cp->tls, NULL, 1); //Here we need to store the iov in case handshake is not done directly
-	if (cp->iovcnt == iovcnt) {
+	if (iovcnt == cp->iovcnt) {
 		cp->state = R2P2_W_RESPONSE;
 	} else {
-		cp->state = R2P2_W_ACK;
+		cp->state = R2P2_W_TLS_HANDSHAKE;
 	}
 	// cp->state = cp->request.head_buffer == cp->request.tail_buffer
 	// 				? R2P2_W_RESPONSE
