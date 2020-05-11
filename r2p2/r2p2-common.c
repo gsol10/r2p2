@@ -439,12 +439,7 @@ static ptls_buffer_t *perform_handshake(ptls_t *tls, ptls_buffer_t *handshake, c
 	}
 	printf("Handshake len: %ld\n", handshake->off);
 	//TODO: return error code
-	if (rbuf->off == 0) {
-		free(rbuf);
-		return NULL;
-	} else {
-		return rbuf;
-	}
+	return rbuf;
 }
 
 static void handle_drop_msg(struct r2p2_client_pair *cp)
