@@ -900,7 +900,9 @@ static void handle_request(generic_buffer gb, int len,
 		sp = find_in_pending_server_pairs(req_id, source);
 		assert(sp);
 		rbuf = perform_handshake(sp->tls, sp->handshake, get_buffer_payload(gb), len);
-		if (r2p2h->p_order != sp->request_received_packets++) {
+		if (sp->request_expected_packets == 0) {
+			sp->request_expected_packets = r2p2h->p_order + 1;
+		} else if (r2p2h->p_order != sp->request_received_packets++) {
 			printf("OOF in request\n");
 			remove_from_pending_server_pairs(sp);
 			free_server_pair(sp);
