@@ -1034,13 +1034,15 @@ static generic_buffer r2p2_get_first(struct iovec *iov, int *iovcnt, uint8_t pol
 	char *target = header + sizeof(struct r2p2_header);
 	size_t bufferleft = PAYLOAD_SIZE;
 	unsigned int starting_offset = 0;
-	uint16_t p_order = ~0;
+	uint16_t p_order = 0;
 	uint8_t reqtype = REQUEST_MSG;
+	uint8_t flag = F_FLAG;
 	
 	if (start_handshake(target, tls, &accepted_data_by_server, &bufferleft) != PTLS_ERROR_IN_PROGRESS) {
 		printf("Error with TLS handshake\n");
 		//TODO: error for first tls handshake
 	}
+	target += PAYLOAD_SIZE - bufferleft;
 	if (accepted_data_by_server > 0 && fill_packet(iov, iovcnt, &starting_offset, target, &bufferleft, tls)) {
 		printf("Error filling packet\n");
 	} else if (accepted_data_by_server == 0) {
@@ -1048,8 +1050,9 @@ static generic_buffer r2p2_get_first(struct iovec *iov, int *iovcnt, uint8_t pol
 	}
 	if (*iovcnt == 0) {
 		p_order = 1;
+		flag |= L_FLAG;
 	}
-	r2p2_set_header(header, req_id, (REQUEST_MSG << 4) | (0x0F & policy), F_FLAG | L_FLAG, p_order); //TODO: set last flag and good p_order
+	r2p2_set_header(header, req_id, (reqtype << 4) | (0x0F & policy), flag, p_order); //TODO: set last flag and good p_order
 
 	set_buffer_payload_size(msg, PAYLOAD_SIZE + sizeof(struct r2p2_header) - bufferleft);
 
