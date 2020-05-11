@@ -152,6 +152,25 @@ static inline void r2p2_set_header(void *header, uint16_t req_id, uint8_t type_p
 	r2p2h->p_order = p_order;
 }
 
+static inline generic_buffer r2p2_get_ack(uint16_t req_id, ptls_buffer_t *handshake) {
+	generic_buffer msg = get_buffer();
+	void *header = get_buffer_payload(msg);
+	char *target = header + sizeof(struct r2p2_header);
+	//assert(handshake->off <= PAYLOAD_SIZE); //THis is annoying, handshake makes the packet size over the MTU.
+	size_t handshake_len = 0;
+
+	if (handshake) {
+		handshake_len = handshake->off;
+		memcpy(target, handshake->base, handshake->off);
+	}
+
+	r2p2_set_header(header, req_id, (ACK_MSG << 4) | (0x0F & FIXED_ROUTE), F_FLAG | L_FLAG, 1);
+
+	set_buffer_payload_size(msg, sizeof(struct r2p2_header) + handshake_len);
+
+	return msg;
+}
+
 static struct r2p2_client_pair *alloc_client_pair(void)
 {
 	struct r2p2_client_pair *cp;
@@ -769,49 +788,18 @@ static void handle_request(generic_buffer gb, int len,
 
 		rbuf = perform_handshake(sp->tls, sp->handshake, get_buffer_payload(gb), len);
 
-
-		//Here, we perform the handshake and if needed get the early data
-// 		if (is_handshake(r2p2h)) {
-// 			// add to pending request
-// 			add_to_pending_server_pairs(sp);
-// 			printf("Sending server hello\n");
-// 			//TODO: wrap this up in a proper function
-// 			generic_buffer tls_server_hello = get_buffer();
-// 			assert(tls_server_hello);
-// 			r2p2_msg_add_payload(&ack_msg, tls_server_hello);
-// 			char *target = get_buffer_payload(tls_server_hello);
-// 			//TODO: setup the header
-// 			struct r2p2_header *r2p2h = (struct r2p2_header *)target;
-// 			bzero(r2p2h, sizeof(struct r2p2_header));
-// 			r2p2h->magic = MAGIC;
-// 			r2p2h->rid = req_id;
-// 			r2p2h->header_size = sizeof(struct r2p2_header);
-// 			r2p2h->type_policy = (TLS_SERVER_HELLO_MSG << 4) | (0x0F & FIXED_ROUTE);
-// 			r2p2h->p_order = 1;
-// 			r2p2h->flags = 0;
-// 			target = (char *)(((struct r2p2_header *) target) + 1);
-// 			memcpy(target, sp->handshake->base, sp->handshake->off);
-// 			set_buffer_payload_size(tls_server_hello, sp->handshake->off + sizeof(struct r2p2_header));
-// 			ptls_buffer_dispose(sp->handshake);
-// 			buf_list_send(ack_msg.head_buffer, source, NULL);
-// #ifdef LINUX
-// 			free_buffer(ack_msg.head_buffer);
-// #endif
-// 			return;
-// 		}
-
-		if (!is_last(r2p2h)) { //TODO: || accepted data rejected
+		//Here we send a TLS_SERVER_HELLO if all the request was not received, otherwise we save the handshake for the response
+		
+		if (!is_last(r2p2h)) { //TODO: || handshake failure
 			// add to pending request
 			add_to_pending_server_pairs(sp);
 
-			// send ACK
-			ack.iov_base = ack_payload;
-			ack.iov_len = 3;
-			r2p2_prepare_msg(&ack_msg, &ack, 1, ACK_MSG, FIXED_ROUTE, req_id, sp->tls, sp->handshake, 1);
-			ptls_buffer_dispose(sp->handshake);
-			buf_list_send(ack_msg.head_buffer, source, NULL);
+			generic_buffer ack_buff = r2p2_get_ack(req_id, sp->handshake);
+
+			//ptls_buffer_dispose(sp->handshake);
+			buf_list_send(ack_buff, source, NULL);
 #ifdef LINUX
-			free_buffer(ack_msg.head_buffer);
+			free_buffer(ack_buff);
 #endif
 		}
 	} else {
