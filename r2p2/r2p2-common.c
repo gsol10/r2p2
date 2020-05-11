@@ -369,7 +369,7 @@ int encrypt_block(char *dst, char *src, unsigned int len, ptls_t *tls){
         return ret;
 	return ret;
 }
-
+//REFACTOR: use this only to split the messages.
 void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int new_request)
 {
