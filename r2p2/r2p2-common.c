@@ -256,6 +256,8 @@ static void free_client_pair(struct r2p2_client_pair *cp)
 {
 	generic_buffer gb;
 
+	ptls_free(cp->tls);
+
 	// Free the received reply
 	gb = cp->reply.head_buffer;
 	while (gb != NULL) {
@@ -294,6 +296,8 @@ static struct r2p2_server_pair *alloc_server_pair(void)
 static void free_server_pair(struct r2p2_server_pair *sp)
 {
 	generic_buffer gb;
+
+	ptls_free(sp->tls);
 
 	// Free the recv message buffers
 	gb = sp->request.head_buffer;
@@ -579,6 +583,7 @@ static void handle_response(generic_buffer gb, int len,
 			cp->request.tail_buffer = NULL;
 			r2p2_prepare_msg(&cp->request, cp->iov, cp->iovcnt, REQUEST_MSG,
 					 cp->ctx->routing_policy,  cp->rid, cp->tls, &handshake, 0);
+			ptls_buffer_dispose(&handshake);
 			//TODO: if we copied iov, free it.
 			rest_to_send = cp->request.head_buffer;
 			buf_list_send(rest_to_send, &cp->reply.sender, cp->impl_data);
@@ -592,6 +597,7 @@ static void handle_response(generic_buffer gb, int len,
 			char *target = get_buffer_payload(unencrypted);
 			ptls_buffer_t *rbuf;
 			rbuf = perform_handshake(cp->tls, &handshake, get_buffer_payload(gb), len);
+			ptls_buffer_dispose(&handshake);
 			assert(rbuf->off != 0);
 			memcpy(target, rbuf->base, rbuf->off);
 			set_buffer_payload_size(unencrypted, (uint32_t)rbuf->off);
@@ -710,7 +716,8 @@ static void handle_request(generic_buffer gb, int len,
 
 			generic_buffer ack_buff = r2p2_get_ack(req_id, sp->handshake, 1);
 
-			//ptls_buffer_dispose(sp->handshake);
+			ptls_buffer_dispose(sp->handshake);
+
 			buf_list_send(ack_buff, source, NULL);
 #ifdef LINUX
 			free_buffer(ack_buff);
@@ -825,6 +832,9 @@ void r2p2_send_response(long handle, struct iovec *iov, int iovcnt)
 	sp = (struct r2p2_server_pair *)handle;
 	r2p2_prepare_msg(&sp->reply, iov, iovcnt, RESPONSE_MSG,
 					 FIXED_ROUTE,  sp->request.req_id, sp->tls, sp->handshake, 1);
+	if (sp->handshake) {
+		ptls_buffer_dispose(sp->handshake);
+	}
 	buf_list_send(sp->reply.head_buffer, &sp->request.sender, NULL);
 
 	// Notify router
@@ -903,8 +913,10 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct i
 	add_to_pending_client_pairs(cp);
 
 	// Send only the first packet
-	chain_buffers(first, NULL);
 	buf_list_send(first, ctx->destination, cp->impl_data);
+#ifdef LINUX
+	free_buffer(first);
+#endif
 }
 
 void r2p2_recv_resp_done(long handle)
