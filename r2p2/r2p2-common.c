@@ -482,7 +482,7 @@ int encrypt_block(char *dst, char *src, unsigned int len, ptls_t *tls){
 	return ret;
 }
 
-static inline void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
+static inline void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int is_first) {
 	int c = 0; //TODO: fixed with two arg indicating iov start and pos
 	unsigned int start_offset = 0;
@@ -577,7 +577,7 @@ static void handle_response(generic_buffer gb, int len,
 
 			cp->request.head_buffer = NULL;
 			cp->request.tail_buffer = NULL;
-			r2p2_prepare_msg2(&cp->request, cp->iov, cp->iovcnt, REQUEST_MSG,
+			r2p2_prepare_msg(&cp->request, cp->iov, cp->iovcnt, REQUEST_MSG,
 					 cp->ctx->routing_policy,  cp->rid, cp->tls, &handshake, 0);
 			//TODO: if we copied iov, free it.
 			rest_to_send = cp->request.head_buffer;
@@ -823,7 +823,7 @@ void r2p2_send_response(long handle, struct iovec *iov, int iovcnt)
 	struct r2p2_server_pair *sp;
 
 	sp = (struct r2p2_server_pair *)handle;
-	r2p2_prepare_msg2(&sp->reply, iov, iovcnt, RESPONSE_MSG,
+	r2p2_prepare_msg(&sp->reply, iov, iovcnt, RESPONSE_MSG,
 					 FIXED_ROUTE,  sp->request.req_id, sp->tls, sp->handshake, 1);
 	buf_list_send(sp->reply.head_buffer, &sp->request.sender, NULL);
 
