@@ -1000,7 +1000,6 @@ static generic_buffer r2p2_get_first(struct iovec *iov, int *iovcnt, uint8_t pol
 
 void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct iovec server_name)
 {
-	generic_buffer second_buffer;
 	struct r2p2_client_pair *cp;
 	uint16_t rid;
 
