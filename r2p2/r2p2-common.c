@@ -61,7 +61,6 @@ static int on_save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t sr
 	if (tls_ticket.base != NULL) {
 		free(tls_ticket.base);//TODO: better to avoid continuous free/malloc
 	}
-	printf("Saving ticket, len = %ld \n", src.len);
     tls_ticket.base = malloc(src.len);
     memcpy(tls_ticket.base, src.base, src.len);
     tls_ticket.len = src.len;
@@ -70,7 +69,6 @@ static int on_save_ticket(ptls_save_ticket_t *self, ptls_t *tls, ptls_iovec_t sr
 
 static int ticket_encrypt(ptls_encrypt_ticket_t *self, ptls_t *tls, int is_encrypt, ptls_buffer_t *dst, ptls_iovec_t src)
 {
-	printf("Encrypt/Decrypt: %d callback called, src len is %lu\n", is_encrypt, src.len);
     int ret;
 
     if ((ret = ptls_buffer_reserve(dst, src.len)) != 0)
@@ -114,9 +112,9 @@ int r2p2_tls_init(int is_server) {
 		tls_ctx.sign_certificate = &signer.super;
 		fclose(fkey);
 		//0-RTT
-		ptls_encrypt_ticket_t et = {ticket_encrypt};
-		tls_ctx.encrypt_ticket = &et;
-		printf("Init, pointer = %p\n", tls_ctx.encrypt_ticket); //TODO: stg really wrong here
+		ptls_encrypt_ticket_t *et = malloc(sizeof(ptls_encrypt_ticket_t));
+		et->cb = ticket_encrypt;
+		tls_ctx.encrypt_ticket = et;
 		tls_ctx.ticket_lifetime = 3600; //Values to be seen later
 		tls_ctx.max_early_data_size = 4096;
 		tls_ctx.require_dhe_on_psk = 0;
@@ -132,11 +130,9 @@ int r2p2_tls_init(int is_server) {
 		//ptls_openssl_init_verify_certificate(verifier, NULL);
 		
 		tls_ctx.verify_certificate = &verifier->super;
-		ptls_save_ticket_t* st = malloc(sizeof(ptls_save_ticket_t) + sizeof(ptls_iovec_t*));
+		ptls_save_ticket_t* st = malloc(sizeof(ptls_save_ticket_t));
 		st->cb = on_save_ticket;
-		//ptls_save_ticket_t *st = {on_save_ticket};
 		tls_ctx.save_ticket = st;
-		printf("Init, pointer = %p\n", tls_ctx.save_ticket);
 		
 	}
 	return 0;
@@ -357,7 +353,6 @@ find_in_pending_client_pairs(uint16_t req_id, struct r2p2_host_tuple *sender)
 	// FIXME: inlcude ip too
 	while (fo) {
 		cp = (struct r2p2_client_pair *)fo->elem;
-		printf("cp sender port = %u, sender port = %u, rid = %d\n", cp->request.sender.port,sender->port,cp->request.req_id);
 		if ((cp->request.sender.port == sender->port) &&
 			(cp->request.req_id == req_id))
 			return cp;
@@ -404,7 +399,6 @@ static void handshake_part(ptls_t *tls, ptls_buffer_t *handshake, char *incoming
 	if (!ptls_handshake_is_complete(tls)) {
 		int ret = PTLS_ERROR_IN_PROGRESS;
 		do {
-			printf("Handshake, pointer = %p\n", tls_ctx.encrypt_ticket);
 			size_t consumed = len - roff;
 			ret = ptls_handshake(tls, handshake, incoming + roff, &consumed, NULL);
 			roff += consumed;
@@ -422,7 +416,6 @@ static ptls_buffer_t *perform_handshake(ptls_t *tls, ptls_buffer_t *handshake, c
 	ptls_buffer_init(rbuf, "", 0);
 	if (!ptls_handshake_is_complete(tls)) {
 		do {
-			printf("Handshake, pointer = %p\n", tls_ctx.encrypt_ticket);
 			size_t consumed = len - roff;
 			ret = ptls_handshake(tls, handshake, incoming + roff, &consumed, NULL);
 			roff += consumed;
