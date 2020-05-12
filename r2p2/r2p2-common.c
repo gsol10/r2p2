@@ -183,14 +183,12 @@ static inline int start_handshake(void *target, ptls_t *tls, size_t *accepted_da
 	ptls_buffer_init(&tbuf, target, *bufferleft);
 	int ret = 0;
 	if (tls_ticket.base != NULL) {
-		printf("We're using the ticket here\n");
 		assert(tls_ticket.len != 0);
 		ptls_handshake_properties_t hprops = {0};
 		hprops.client.session_ticket = tls_ticket;
 		hprops.client.max_early_data_size = accepted_data_by_server;
 		ret = ptls_handshake(tls, &tbuf, NULL, NULL, &hprops);
 	} else {
-		printf("Simple handshake\n");
 		ret = ptls_handshake(tls, &tbuf, NULL, NULL, NULL);
 	}
 	assert(tbuf.off <= *bufferleft && "Handshake is too long !");
@@ -213,7 +211,6 @@ static int fill_packet(struct iovec *iov, int *iovcnt, unsigned int *iov_pt, voi
 		char *src = iov[iov_idx].iov_base;
 		ptls_buffer_t sbuf;
 		ptls_buffer_init(&sbuf, target, *bufferleft);
-		printf("Encrypting here\n");
 		ret = ptls_send(tls, &sbuf, src + starting_offset, tocopy); //This might be subtimal. It could be useful to group the iovec before encrypting (to avoid multiplying the record overhead)
 		
 		if (ret != 0) {
@@ -397,7 +394,6 @@ static ptls_buffer_t *receive_tls(ptls_t *tls, ptls_buffer_t *handshake, char *i
 		size_t consumed = len - roff;
 		ret = ptls_receive(tls, rbuf, incoming + roff, &consumed);
 		roff += consumed;
-		printf("2\\State = %d, in progress = %d, len = %d, roff = %d, rbuf len = %ld\n", ret, PTLS_ERROR_IN_PROGRESS, len, roff, rbuf->off);
 	}
 	return rbuf;
 }
@@ -413,12 +409,10 @@ static void handshake_part(ptls_t *tls, ptls_buffer_t *handshake, char *incoming
 			ret = ptls_handshake(tls, handshake, incoming + roff, &consumed, NULL);
 			roff += consumed;
 		} while (ret == PTLS_ERROR_IN_PROGRESS && len != roff);
-		printf("State = %d, in progress = %d, len = %d, roff = %d\n", ret, PTLS_ERROR_IN_PROGRESS, len, roff);
 	}
 }
 
 static ptls_buffer_t *perform_handshake(ptls_t *tls, ptls_buffer_t *handshake, char *incoming, int len) {
-	printf("dealing with %d\n", len);
 	incoming = (char *)((struct r2p2_header *) incoming + 1);
 	len -= sizeof(struct r2p2_header);
 	int roff = 0;
@@ -433,16 +427,13 @@ static ptls_buffer_t *perform_handshake(ptls_t *tls, ptls_buffer_t *handshake, c
 			ret = ptls_handshake(tls, handshake, incoming + roff, &consumed, NULL);
 			roff += consumed;
 		} while (ret == PTLS_ERROR_IN_PROGRESS && len != roff);
-		printf("State = %d, in progress = %d, len = %d, roff = %d\n", ret, PTLS_ERROR_IN_PROGRESS, len, roff);
 	}
 	
 	while (roff < len) {
 		size_t consumed = len - roff;
 		ret = ptls_receive(tls, rbuf, incoming + roff, &consumed);
 		roff += consumed;
-		printf("2\\State = %d, in progress = %d, len = %d, roff = %d, rbuf len = %ld\n", ret, PTLS_ERROR_IN_PROGRESS, len, roff, rbuf->off);
 	}
-	printf("Handshake len: %ld\n", handshake->off);
 	//TODO: return error code
 	return rbuf;
 }
@@ -548,24 +539,19 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 			target += sizeof(struct r2p2_header);
 			if (handshake == NULL && !ptls_handshake_is_complete(tls)) {
 				//TODO:First we init the handshake here
-				printf("bufferleft = %d\n", bufferleft);
 				ptls_buffer_init(&tbuf, target, bufferleft);
 				int ret;
 				size_t accepted_data_by_server = 0;
 				if (tls_ticket.base != NULL) {
-					printf("We're using the ticket here\n");
 					assert(tls_ticket.len != 0);
 					ptls_handshake_properties_t hprops = {0};
 					hprops.client.session_ticket = tls_ticket; //This is ok for the client, server should not go around here
 					hprops.client.max_early_data_size = &accepted_data_by_server;//TODO: fix, won't work, or will it ?
 					ret = ptls_handshake(tls, &tbuf, NULL, NULL, &hprops);
 				} else {
-					printf("Simple handshake\n");
 					ret = ptls_handshake(tls, &tbuf, NULL, NULL, NULL);
 				}
-				printf("ret = %d, accepted_data = %d\n", ret, accepted_data_by_server);
 				if (ret == PTLS_ERROR_IN_PROGRESS && accepted_data_by_server <= 0) {
-					printf("Here2, isalloc %d\n", tbuf.is_allocated);
 					//No ticket for example //If handshake is not done, fix flag and send immediately
 					//req_type = TLS_CLIENT_HELLO_MSG
 					
@@ -573,18 +559,15 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 					r2p2h->flags |= F_FLAG;
 					r2p2h->p_order = ~0;//Special nb of msgs.
 					msg->req_id = req_id;
-					printf("Handshake 1, rid = %u\n", r2p2h->rid);
 					set_buffer_payload_size(gb, sizeof(struct r2p2_header) + tbuf.off);
 				} else if (ret == PTLS_ERROR_IN_PROGRESS && accepted_data_by_server > 0) {
 					//Fill first packet and return. Need way to remember how much data was accepted, we send early data only if we can fill everything
-					printf("Here2, isalloc %d\n", tbuf.is_allocated);
 					
 					r2p2h->type_policy = (REQUEST_MSG << 4) | (0x0F & policy);
 					r2p2h->flags |= F_FLAG;
 					r2p2h->p_order = 1;//TODO: either 1 if there is everything or -1 if there is more
 					r2p2h->flags |= L_FLAG;
 					msg->req_id = req_id;
-					printf("Handshake 2, rid = %u\n", r2p2h->rid);
 					tocopy = min(bufferleft - ptls_get_record_overhead(tls), iov[0].iov_len);//Here we can copy max data we can, not only on the first iov
 					printf("Send ret = %d\n", ptls_send(tls, &tbuf, iov[iov_idx].iov_base, tocopy));
 					set_buffer_payload_size(gb, sizeof(struct r2p2_header) + tbuf.off);
@@ -603,9 +586,7 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 		tocopy = min(bufferleft - ptls_get_record_overhead(tls), iov[iov_idx].iov_len - copied);
 		ptls_buffer_t sbuf;
 		ptls_buffer_init(&sbuf, target, bufferleft);
-		printf("Encrypting here\n");
-		printf("Send ret = %d\n", ptls_send(tls, &sbuf, src + copied, tocopy));
-		printf("tocopy = %d, written = %d\n", tocopy, sbuf.off);
+		ptls_send(tls, &sbuf, src + copied, tocopy); //TODO: get error msg
 		copied += tocopy;
 		bufferleft -= sbuf.off;
 		target += sbuf.off;
@@ -649,7 +630,6 @@ static void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcn
 		}
 		int written = iovcnt - c;
 		fill_packet(iov + c, &written, &start_offset, target, &bufferleft, tls);
-		printf("%d packet written\n", written);
 		c += written;
 
 		set_buffer_payload_size(gb, PAYLOAD_SIZE + sizeof(struct r2p2_header) - bufferleft);
@@ -721,13 +701,11 @@ static void handle_response(generic_buffer gb, int len,
 	cp->reply.sender = *source;
 	ptls_buffer_t handshake;
 	switch(get_msg_type(r2p2h)) {
-		case TLS_SERVER_HELLO_MSG: //IT means that there is no response in the packet ie that requests were rejected (in case of ticket use)
+		case TLS_SERVER_HELLO_MSG: //It means that there is no response in the packet ie that requests were rejected (in case of ticket use)
 			assert(cp->state == R2P2_W_TLS_HANDSHAKE || cp->state == R2P2_W_RESPONSE);
-			//TODO: Here we perform the end of the handshake, then resend
-			
-			printf("Handshake, pointer = %p\n", tls_ctx.save_ticket);
+			//Here we perform the end of the handshake, then resend
+
 			perform_handshake(cp->tls, &handshake, get_buffer_payload(gb), len);
-			printf("Received server hello\n");
 
 			cp->request.head_buffer = NULL;
 			cp->request.tail_buffer = NULL;
@@ -748,7 +726,6 @@ static void handle_response(generic_buffer gb, int len,
 			rbuf = perform_handshake(cp->tls, &handshake, get_buffer_payload(gb), len);
 			assert(rbuf->off != 0);
 			memcpy(target, rbuf->base, rbuf->off);
-			printf("Received %ld bytes : %s\n", rbuf->off, rbuf->base);
 			set_buffer_payload_size(unencrypted, (uint32_t)rbuf->off);
 			free_buffer(gb);
 			
@@ -893,7 +870,6 @@ static void handle_request(generic_buffer gb, int len,
 	char *target = get_buffer_payload(unencrypted);
 	if (rbuf != NULL && rbuf->off != 0) {
 		memcpy(target, rbuf->base, rbuf->off);
-		printf("Received %ld bytes : %s\n", rbuf->off, rbuf->base);
 		set_buffer_payload_size(unencrypted, (uint32_t)rbuf->off);
 		r2p2_msg_add_payload(&sp->request, unencrypted);
 		free(rbuf);
@@ -1040,7 +1016,6 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct i
 	}
 
 	rid = rand();
-	printf("Test, rid = %u\n", rid);
 
 	cp->iov = iov; //TODO: do we copy it or not ?
 	cp->iovcnt = iovcnt;
@@ -1057,8 +1032,6 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct i
 	} else {
 		cp->state = R2P2_W_TLS_HANDSHAKE;
 	}
-
-	printf("Test2, rid = %u\n", cp->request.req_id);
 
 	add_to_pending_client_pairs(cp);
 
