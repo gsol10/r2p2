@@ -171,6 +171,19 @@ static inline generic_buffer r2p2_get_ack(uint16_t req_id, ptls_buffer_t *handsh
 	return msg;
 }
 
+static inline generic_buffer r2p2_get_drop(uint16_t req_id) {
+	generic_buffer msg = get_buffer();
+	void *header = get_buffer_payload(msg);
+	char *target = header + sizeof(struct r2p2_header);
+	uint8_t reqtype = DROP_MSG;
+
+	r2p2_set_header(header, req_id, (reqtype << 4) | (0x0F & FIXED_ROUTE), F_FLAG | L_FLAG, 1);
+
+	set_buffer_payload_size(msg, sizeof(struct r2p2_header));
+
+	return msg;
+}
+
 /*
 bufferleft at entry: bufferleft, update when leaving
 */
@@ -468,141 +481,6 @@ int encrypt_block(char *dst, char *src, unsigned int len, ptls_t *tls){
         return ret;
 	return ret;
 }
-//REFACTOR: use this only to split the messages.
-void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int new_request)
-{
-	unsigned int iov_idx, bufferleft, copied, tocopy, buffer_cnt, total_payload,
-		single_packet_msg, is_first, should_small_first;
-	struct r2p2_header *r2p2h;
-	generic_buffer gb, new_gb;
-	char *target, *src;
-
-	// Compute the total payload
-	total_payload = 0;
-	for (int i = 0; i < iovcnt; i++)
-		total_payload += iov[i].iov_len;
-
-	if (total_payload <= PAYLOAD_SIZE)
-		single_packet_msg = 1;
-	else
-		single_packet_msg = 0;
-
-	if (!single_packet_msg && (req_type == REQUEST_MSG))
-		should_small_first = 1;
-	else should_small_first = 0;
-
-	iov_idx = 0;
-	bufferleft = 0;
-	copied = 0;
-	gb = NULL;
-	buffer_cnt = 0;
-	is_first = 1;
-	ptls_buffer_t tbuf;
-	while (iov_idx < (unsigned int)iovcnt) {
-		if (!bufferleft) {
-			// Set the last buffer to full size
-			if (gb) {
-				if (is_first && should_small_first) {
-					set_buffer_payload_size(gb, MIN_PAYLOAD_SIZE +
-													sizeof(struct r2p2_header));
-					is_first = 0;
-				} else
-					set_buffer_payload_size(gb, PAYLOAD_SIZE +
-													sizeof(struct r2p2_header));
-			}
-			new_gb = get_buffer();
-			assert(new_gb);
-			r2p2_msg_add_payload(msg, new_gb);
-			gb = new_gb;
-			target = get_buffer_payload(gb);
-			if (is_first && should_small_first)
-				bufferleft = MIN_PAYLOAD_SIZE;
-			else
-				bufferleft = PAYLOAD_SIZE;
-			// FIX the header
-			r2p2h = (struct r2p2_header *)target;
-			bzero(r2p2h, sizeof(struct r2p2_header));
-			r2p2h->magic = MAGIC;
-			r2p2h->rid = req_id;
-			r2p2h->header_size = sizeof(struct r2p2_header);
-			r2p2h->type_policy = (req_type << 4) | (0x0F & policy);
-			r2p2h->p_order = buffer_cnt++;
-			r2p2h->flags = 0;
-			target += sizeof(struct r2p2_header);
-			if (handshake == NULL && !ptls_handshake_is_complete(tls)) {
-				//TODO:First we init the handshake here
-				ptls_buffer_init(&tbuf, target, bufferleft);
-				int ret;
-				size_t accepted_data_by_server = 0;
-				if (tls_ticket.base != NULL) {
-					assert(tls_ticket.len != 0);
-					ptls_handshake_properties_t hprops = {0};
-					hprops.client.session_ticket = tls_ticket; //This is ok for the client, server should not go around here
-					hprops.client.max_early_data_size = &accepted_data_by_server;//TODO: fix, won't work, or will it ?
-					ret = ptls_handshake(tls, &tbuf, NULL, NULL, &hprops);
-				} else {
-					ret = ptls_handshake(tls, &tbuf, NULL, NULL, NULL);
-				}
-				if (ret == PTLS_ERROR_IN_PROGRESS && accepted_data_by_server <= 0) {
-					//No ticket for example //If handshake is not done, fix flag and send immediately
-					//req_type = TLS_CLIENT_HELLO_MSG
-					
-					r2p2h->type_policy = (TLS_CLIENT_HELLO_MSG << 4) | (0x0F & policy);
-					r2p2h->flags |= F_FLAG;
-					r2p2h->p_order = ~0;//Special nb of msgs.
-					msg->req_id = req_id;
-					set_buffer_payload_size(gb, sizeof(struct r2p2_header) + tbuf.off);
-				} else if (ret == PTLS_ERROR_IN_PROGRESS && accepted_data_by_server > 0) {
-					//Fill first packet and return. Need way to remember how much data was accepted, we send early data only if we can fill everything
-					
-					r2p2h->type_policy = (REQUEST_MSG << 4) | (0x0F & policy);
-					r2p2h->flags |= F_FLAG;
-					r2p2h->p_order = 1;//TODO: either 1 if there is everything or -1 if there is more
-					r2p2h->flags |= L_FLAG;
-					msg->req_id = req_id;
-					tocopy = min(bufferleft - ptls_get_record_overhead(tls), iov[0].iov_len);//Here we can copy max data we can, not only on the first iov
-					printf("Send ret = %d\n", ptls_send(tls, &tbuf, iov[iov_idx].iov_base, tocopy));
-					set_buffer_payload_size(gb, sizeof(struct r2p2_header) + tbuf.off);
-				}
-				return;
-			}
-			if (handshake != NULL && is_first) {
-				//First memcpy the handshake
-				memcpy(target, handshake->base, handshake->off);
-				target += handshake->off;
-				bufferleft -= handshake->off;
-				assert(bufferleft >= 0);
-			}
-		}
-		src = iov[iov_idx].iov_base;
-		tocopy = min(bufferleft - ptls_get_record_overhead(tls), iov[iov_idx].iov_len - copied);
-		ptls_buffer_t sbuf;
-		ptls_buffer_init(&sbuf, target, bufferleft);
-		ptls_send(tls, &sbuf, src + copied, tocopy); //TODO: get error msg
-		copied += tocopy;
-		bufferleft -= sbuf.off;
-		target += sbuf.off;
-		if (copied == iov[iov_idx].iov_len) {
-			iov_idx++;
-			copied = 0;
-		}
-	}
-
-	// Set the len of the last buffer
-	set_buffer_payload_size(gb, PAYLOAD_SIZE + sizeof(struct r2p2_header) -
-									bufferleft);
-
-	// Fix the header of the first and last packet
-	r2p2h = (struct r2p2_header *)get_buffer_payload(msg->head_buffer);
-	if (new_request)
-		r2p2h->flags |= F_FLAG;
-	r2p2h->p_order = buffer_cnt;
-	r2p2h = (struct r2p2_header *)get_buffer_payload(msg->tail_buffer);
-	r2p2h->flags |= L_FLAG;
-
-	msg->req_id = req_id;
-}
 
 static inline void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int is_first) {
@@ -650,17 +528,11 @@ static int should_keep_req(__attribute__((unused))struct r2p2_server_pair *sp)
 
 static void send_drop_msg(struct r2p2_server_pair *sp)
 {
-	char drop_payload[] = "DROP";
-	struct iovec ack;
-	struct r2p2_msg drop_msg = {0};
 
-	ack.iov_base = drop_payload;
-	ack.iov_len = 4;
-	r2p2_prepare_msg(&drop_msg, &ack, 1, DROP_MSG, FIXED_ROUTE,
-			sp->request.req_id, sp->tls, NULL, 1);
-	buf_list_send(drop_msg.head_buffer, &sp->request.sender, NULL);
+	generic_buffer drop = r2p2_get_drop(sp->request.req_id);
+	buf_list_send(drop, &sp->request.sender, NULL);
 #ifdef LINUX
-	free_buffer(drop_msg.head_buffer);
+	free_buffer(drop);
 #endif
 
 }
