@@ -482,7 +482,7 @@ int encrypt_block(char *dst, char *src, unsigned int len, ptls_t *tls){
 	return ret;
 }
 
-static inline void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
+void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int is_first) {
 	int c = 0; //TODO: fixed with two arg indicating iov start and pos
 	unsigned int start_offset = 0;
