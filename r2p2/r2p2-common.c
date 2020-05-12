@@ -1036,14 +1036,8 @@ void r2p2_send_req(struct iovec *iov, int iovcnt, struct r2p2_ctx *ctx, struct i
 	add_to_pending_client_pairs(cp);
 
 	// Send only the first packet
-	//second_buffer = get_buffer_next(cp->request.head_buffer);
 	chain_buffers(first, NULL);
 	buf_list_send(first, ctx->destination, cp->impl_data);
-// #ifdef LINUX
-// 	chain_buffers(cp->request.head_buffer, second_buffer);
-// #else
-// 	cp->request.head_buffer = second_buffer;
-// #endif
 }
 
 void r2p2_recv_resp_done(long handle)
