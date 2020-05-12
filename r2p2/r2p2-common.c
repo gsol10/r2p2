@@ -604,11 +604,11 @@ void r2p2_prepare_msg(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
 	msg->req_id = req_id;
 }
 
-static void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
-					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake) {
+static inline void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcnt,
+					  uint8_t req_type, uint8_t policy, uint16_t req_id, ptls_t *tls, ptls_buffer_t *handshake, int is_first) {
 	int c = 0; //TODO: fixed with two arg indicating iov start and pos
 	unsigned int start_offset = 0;
-	uint16_t cnt = 1;
+	uint16_t cnt = is_first ? 0 : 1;
 	int type_policy = (req_type << 4) | (0x0F & policy);
 	while (c < iovcnt) {
 		generic_buffer gb = get_buffer();
@@ -616,7 +616,7 @@ static void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcn
 		void *header = get_buffer_payload(gb);
 		char *target = header + sizeof(struct r2p2_header);
 		size_t bufferleft = PAYLOAD_SIZE;
-		if (c == 0) {
+		if (c == 0 && handshake != NULL) {
 			memcpy(target, handshake->base, handshake->off);
 			target += handshake->off;
 			bufferleft -= handshake->off;
@@ -632,6 +632,9 @@ static void r2p2_prepare_msg2(struct r2p2_msg *msg, struct iovec *iov, int iovcn
 
 	//Fix first and last header
 	struct r2p2_header *r2p2h = (struct r2p2_header *)get_buffer_payload(msg->head_buffer);
+	if (is_first) {
+		r2p2h->flags |= F_FLAG;
+	}
 	r2p2h->p_order = cnt;
 	r2p2h = (struct r2p2_header *)get_buffer_payload(msg->tail_buffer);
 	r2p2h->flags |= L_FLAG;
@@ -703,7 +706,7 @@ static void handle_response(generic_buffer gb, int len,
 			cp->request.head_buffer = NULL;
 			cp->request.tail_buffer = NULL;
 			r2p2_prepare_msg2(&cp->request, cp->iov, cp->iovcnt, REQUEST_MSG,
-					 cp->ctx->routing_policy,  cp->rid, cp->tls, &handshake);
+					 cp->ctx->routing_policy,  cp->rid, cp->tls, &handshake, 0);
 			//TODO: if we copied iov, free it.
 			rest_to_send = cp->request.head_buffer;
 			buf_list_send(rest_to_send, &cp->reply.sender, cp->impl_data);
@@ -948,8 +951,8 @@ void r2p2_send_response(long handle, struct iovec *iov, int iovcnt)
 	struct r2p2_server_pair *sp;
 
 	sp = (struct r2p2_server_pair *)handle;
-	r2p2_prepare_msg(&sp->reply, iov, iovcnt, RESPONSE_MSG, FIXED_ROUTE,
-					 sp->request.req_id, sp->tls, sp->handshake, 1);
+	r2p2_prepare_msg2(&sp->reply, iov, iovcnt, RESPONSE_MSG,
+					 FIXED_ROUTE,  sp->request.req_id, sp->tls, sp->handshake, 1);
 	buf_list_send(sp->reply.head_buffer, &sp->request.sender, NULL);
 
 	// Notify router
