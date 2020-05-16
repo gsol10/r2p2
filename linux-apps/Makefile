@@ -22,6 +22,7 @@
 
 ROOTDIR=$(shell git rev-parse --show-toplevel)
 R2P2LIB_DIR=$(ROOTDIR)/r2p2
+PICOTLSLIB_DIR=../deps/picotls
 
 include $(R2P2LIB_DIR)/dir.mk
 

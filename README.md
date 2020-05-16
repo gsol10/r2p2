@@ -18,6 +18,17 @@ export PCI_ADDR=<the-devive-pci-address>
 make
 ```
 
+### Picotls
+
+To run R2P2 with encryption support, you need to build the dependencies as well. For this, you can run
+
+```bash
+git submodule init
+git submodule update
+```
+
+inside `deps/picotls`, or run `git clone --recurse-submodules <r2p2-repo>` from the very start.
+
 ## Code Structure
 
 The repository is structured as follows:
