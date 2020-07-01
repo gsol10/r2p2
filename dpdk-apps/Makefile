@@ -23,13 +23,14 @@
 ROOTDIR=$(shell git rev-parse --show-toplevel)
 RTE_SDK=$(ROOTDIR)/dpdk
 R2P2LIB_DIR=$(ROOTDIR)/r2p2
+PICOTLSLIB_DIR=../deps/picotls
 
 include $(ROOTDIR)/netstack/dp/dir.mk
 include $(ROOTDIR)//netstack/net/dir.mk
 include $(R2P2LIB_DIR)/dir.mk
 
 CC=gcc
-CFLAGS += -g -O3 -I$(ROOTDIR)/netstack/inc -I$(R2P2LIB_DIR)/inc -I$(RTE_SDK)/x86_64-native-linuxapp-gcc/include -DNO_BATCH
+CFLAGS += -g -O3 -I$(ROOTDIR)/netstack/inc -I$(R2P2LIB_DIR)/inc -I$(RTE_SDK)/x86_64-native-linuxapp-gcc/include -DNO_BATCH -I$(PICOTLSLIB_DIR)/include
 
 WERROR_FLAGS := -W -Wall -Wstrict-prototypes -Wmissing-prototypes
 WERROR_FLAGS += -Wmissing-declarations -Wold-style-definition -Wpointer-arith
@@ -38,7 +39,7 @@ WERROR_FLAGS += -Wformat-nonliteral -Wformat-security
 WERROR_FLAGS += -Wundef -Wwrite-strings
 
 CFLAGS += $(WERROR_FLAGS) -mavx2
-LDFLAGS= -Wl,--whole-archive -Wl,-ldpdk -Wl,--no-whole-archive -lrt -lpthread -lm -ldl -L$(RTE_SDK)/x86_64-native-linuxapp-gcc/lib -lconfig -lnuma
+LDFLAGS= -Wl,--whole-archive -Wl,-ldpdk -Wl,--no-whole-archive -lrt -lpthread -lm -ldl -L$(RTE_SDK)/x86_64-native-linuxapp-gcc/lib -lconfig -lnuma -lpicotls-core -lpicotls-openssl -lcrypto -L$(PICOTLSLIB_DIR)
 
 SRCS_C := $(addprefix $(ROOTDIR)/netstack/dp/, $(DP_SRC)) $(addprefix $(ROOTDIR)/netstack/net/, $(NET_SRC)) $(addprefix $(R2P2LIB_DIR)/, $(R2P2_SRC_C))
 OBJS_C := $(patsubst %.c, %.o, $(SRCS_C))
