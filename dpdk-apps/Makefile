@@ -46,6 +46,7 @@ OBJS_C := $(patsubst %.c, %.o, $(SRCS_C))
 
 all:
 	make r2p2-echo
+	make r2p2-echo-send
 	make r2p2-echo-fdir
 	make synthetic-time
 	make synthetic-time-fdir
@@ -55,6 +56,9 @@ all:
 
 r2p2-echo: cleanstate r2p2-echo.o $(OBJS_C)
 	$(CC) -o $@ r2p2-echo.o $(OBJS_C) $(LDFLAGS)
+
+r2p2-echo-send: cleanstate r2p2-echo-send.o $(OBJS_C)
+	$(CC) -o $@ r2p2-echo-send.o $(OBJS_C) $(LDFLAGS)
 
 r2p2-echo-fdir: CFLAGS += -DFDIR
 r2p2-echo-fdir: cleanstate r2p2-echo.o $(OBJS_C)

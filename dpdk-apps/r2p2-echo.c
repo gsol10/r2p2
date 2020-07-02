@@ -54,7 +54,7 @@ int app_init(__attribute__((unused)) int argc,
 			 __attribute__((unused)) char **argv)
 {
 	printf("Hello r2p2 echo\n");
-
+	r2p2_tls_init(1);
 	if (r2p2_init(8000)) { // this port number is not used
 		printf("Error initialising\n");
 		return -1;
