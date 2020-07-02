@@ -43,7 +43,7 @@ struct r2p2_host_tuple destination;
 int c = 0;
 int64_t *results;
 
-static inline int64_t time_ns()
+static inline int64_t time_ns(void)
 {
 	struct timespec ts;
 	int r = clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -140,6 +140,10 @@ void app_main(void)
 		}
 		r2p2_poll();
 	} while (!force_quit);
+
+	for (int i = 0; i < NB_RESULTS; i++) {
+		printf("%lld\n", results[i]);
+	}
 
 	return;
 }
