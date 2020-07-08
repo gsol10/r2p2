@@ -860,12 +860,14 @@ static generic_buffer r2p2_get_first(struct iovec *iov, int *iovcnt, uint8_t pol
 		//TODO: error for first tls handshake
 	}
 	target += PAYLOAD_SIZE - bufferleft;
+	int former_iovcnt = *iovcnt;
 	if (accepted_data_by_server > 0 && fill_packet(iov, iovcnt, &starting_offset, target, &bufferleft, tls)) {
 		printf("Error filling packet\n");
 	} else if (accepted_data_by_server == 0) {
+		*iovcnt = 0;
 		reqtype = TLS_CLIENT_HELLO_MSG;
 	}
-	if (*iovcnt == 0) {
+	if (*iovcnt == former_iovcnt) {
 		p_order = 1;
 		flag |= L_FLAG;
 	}
