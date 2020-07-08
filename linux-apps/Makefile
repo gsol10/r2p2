@@ -52,6 +52,14 @@ linux_server: CFLAGS += $(EXTRA_SERVER_FLAGS)
 linux_server: cleanstate linux-server.o $(OBJC)
 	gcc -o $@ linux-server.o $(OBJC) $(LDFLAGS)
 
+echo_client: CFLAGS += $(EXTRA_CLIENT_FLAGS)
+echo_client: cleanstate echo-client.o $(OBJC)
+	gcc -o $@ echo-client.o $(OBJC)  $(LDFLAGS)
+
+echo_server: CFLAGS += $(EXTRA_SERVER_FLAGS)
+echo_server: cleanstate echo-server.o $(OBJC)
+	gcc -o $@ echo-server.o $(OBJC) $(LDFLAGS)
+
 cleanstate:
 	make -C ../r2p2 clean
 
